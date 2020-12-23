@@ -22,9 +22,11 @@ pub enum MetaType {
 }
 
 impl MetaType {
+    #[deny(unreachable_patterns)]
     pub fn from_code(code: i32) -> Result<Self, i32> {
         use self::MetaType::*;
         match code as u32 {
+            #[cfg(yara_major="3")]
             META_TYPE_NULL => Ok(Null),
             META_TYPE_INTEGER => Ok(Integer),
             META_TYPE_STRING => Ok(String),
@@ -34,7 +36,7 @@ impl MetaType {
     }
 }
 
-// TODO: Find a better way than accessing anonymous fields or use flag yara 3.7 or something else.
+#[cfg(yara_major="3")]
 impl YR_MATCHES {
     pub fn get_head(&self) -> *const YR_MATCH {
         unsafe { self.__bindgen_anon_1.head }
@@ -42,6 +44,17 @@ impl YR_MATCHES {
 
     pub fn get_tail(&self) -> *const YR_MATCH {
         unsafe { self.__bindgen_anon_2.tail }
+    }
+}
+
+#[cfg(yara_major="4")]
+impl YR_MATCHES {
+    pub fn get_head(&self) -> *const YR_MATCH {
+        self.head
+    }
+
+    pub fn get_tail(&self) -> *const YR_MATCH {
+        self.tail
     }
 }
 
@@ -83,6 +96,7 @@ impl YR_RULE {
     }
 }
 
+#[cfg(yara_major="3")]
 impl YR_STRING {
     pub fn get_identifier(&self) -> *const c_char {
         unsafe { self.__bindgen_anon_1.identifier }
@@ -90,5 +104,16 @@ impl YR_STRING {
 
     pub fn get_string(&self) -> *const c_char {
         unsafe { self.__bindgen_anon_2.string as _ }
+    }
+}
+
+#[cfg(yara_major="4")]
+impl YR_STRING {
+    pub fn get_identifier(&self) -> *const c_char {
+        unsafe { self.__bindgen_anon_3.identifier }
+    }
+
+    pub fn get_string(&self) -> *const c_char {
+        unsafe { self.__bindgen_anon_1.string as _ }
     }
 }

@@ -1,6 +1,8 @@
 // Inspired from https://github.com/jgallagher/rusqlite/blob/master/libsqlite3-sys/build.rs
 
 use std::env;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 
 fn main() {
     // Tell cargo to tell rustc to link the system yara
@@ -15,7 +17,14 @@ fn main() {
 	println!("cargo:rustc-link-search=native={}", yara_library_path);
     }
 
-    build::add_bindings();
+    let out_dir = env::var("OUT_DIR")
+	.expect("$OUT_DIR should be defined");
+    let out_path = PathBuf::from(out_dir).join("bindings.rs");
+
+    build::add_bindings(&out_path);
+
+    let major_version = parse_major_version(&out_path);
+    println!("cargo:rustc-cfg=yara_major=\"{}\"", major_version);
 }
 
 fn link(lib: &str) {
@@ -31,12 +40,36 @@ fn lib_mode(lib: &str) -> &'static str {
     }
 }
 
+/// Searches for "pub const YR_MAJOR_VERSION: u32 = " in the binding `file`.
+// TODO: Find a better way to get the major version
+fn parse_major_version(file: &Path) -> u32 {
+    use std::io::{BufRead as _, BufReader};
+
+    let line_begin = "pub const YR_MAJOR_VERSION: u32 = ";
+
+    let file = File::open(file)
+        .expect("Should be readable");
+
+    let line = BufReader::new(file)
+        .lines()
+        .map(|r| r.expect("Should read lines"))
+        .find(|l| l.starts_with(line_begin))
+        .expect("There should be a major version defined");
+
+    line.strip_prefix(line_begin)
+        .expect("Should begin with line_begin")
+        .strip_suffix(";")
+        .expect("Should end with a ;")
+        .parse()
+        .expect("Should be able to parse the major version")
+}
+
 #[cfg(any(feature = "bundled-3_7",
 	  feature = "bundled-3_11"))]
 mod build {
     use std::env;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[cfg(feature = "bundled-3_7")]
     const BINDING_FILE: &'static str = "yara-3.7.rs";
@@ -44,10 +77,7 @@ mod build {
     #[cfg(feature = "bundled-3_11")]
     const BINDING_FILE: &'static str = "yara-3.11.rs";
 
-    pub fn add_bindings() {
-	let out_dir = env::var("OUT_DIR")
-	    .expect("$OUT_DIR should be defined");
-	let out_path = PathBuf::from(out_dir).join("bindings.rs");
+    pub fn add_bindings(out_path: &Path) {
 	fs::copy(PathBuf::from("bindings").join(BINDING_FILE), out_path)
 	    .expect("Could not copy bindings to output directory");
     }
@@ -59,9 +89,9 @@ mod build {
     extern crate bindgen;
 
     use std::env;
-    use std::path::PathBuf;
+    use std::path::Path;
 
-    pub fn add_bindings() {
+    pub fn add_bindings(out_path: &Path) {
         let mut builder = bindgen::Builder::default()
             .header("wrapper.h")
             .whitelist_var("CALLBACK_.*")
@@ -70,6 +100,8 @@ mod build {
             .whitelist_var("STRING_GFLAGS_NULL")
             .whitelist_var("YARA_ERROR_LEVEL_.*")
             .whitelist_var("SCAN_FLAGS_.*")
+            .whitelist_var("YR_MAJOR_VERSION")
+            .whitelist_var("YR_MINOR_VERSION")
             .whitelist_function("yr_initialize")
             .whitelist_function("yr_finalize")
             .whitelist_function("yr_finalize_thread")
@@ -79,8 +111,8 @@ mod build {
             .whitelist_function("yr_get_tidx")
             .whitelist_type("YR_EXTERNAL_VARIABLE")
 	    .whitelist_type("YR_MATCH")
+            .whitelist_type("YR_ARENA")
             .opaque_type("YR_COMPILER")
-            .opaque_type("YR_ARENA")
             .opaque_type("YR_AC_MATCH_TABLE")
             .opaque_type("YR_AC_TRANSITION_TABLE")
             .opaque_type("_YR_EXTERNAL_VARIABLE");
@@ -96,10 +128,8 @@ mod build {
             .generate()
             .expect("Unable to generate bindings");
 
-        // Write the bindings to the $OUT_DIR/bindings.rs file.
-        let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
         bindings
-            .write_to_file(out_path.join("bindings.rs"))
+            .write_to_file(out_path)
             .expect("Couldn't write bindings!");
     }
 }
